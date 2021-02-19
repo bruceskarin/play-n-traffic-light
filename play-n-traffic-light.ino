@@ -20,6 +20,8 @@ int addr = 0;
 
 RTC_DS3231 rtc;
 
+TMRpcm audio;
+
 // Display Setup
 const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;  // lcd pins
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7); //connect LCD
@@ -37,7 +39,7 @@ int totalScore = 0;
 #define REMINDER_SCREEN 2
 
 int screens = 0;      // start screen
-int maxScrees / ( exime  c2;= anx  n n/ ezrdero based)
+int maxScreen = 2;   // number of screens (zero based count)
 
 
 //Push Button and LED Setup
@@ -121,13 +123,13 @@ void setup() {
     Serial.println("RTC lost power, lets set the time!");
   }
   
-  tmrpcm.speakerPin = audioOutPin;
+  audio.speakerPin = audioOutPin;
   Serial.begin(9600);
   if (!SD.begin(SD_CardPin)) {
     Serial.println("No SD Card Found");
     return;
   }
-  tmrpcm.setVolume(5);
+  audio.setVolume(5);
   
 //  rtc.adjust(DateTime(2019, 1, 10, 7, 59, 30));              // uncomment to manualy set the RTC datetime
 
@@ -263,19 +265,16 @@ int blinkLed(int ledPin, int ledState){
 
 void startWarning() {                    // function to start audio warning for a defined interval
 
-  if (currentMs - previousMs >= interval) {
-    previousMs = currentMs;         // save the last time you blinked the LED
+  if (currentMsWarn - previousMsWarn >= warnInterval) {
+    previousMsWarn = currentMsWarn;         // save the last time you blinked the LED
    
     Serial.println("Playing warning");
-    if(!tmrpcm.isPlaying()){
-      tmrpcm.play("warning.wav");
+    if(!audio.isPlaying()){
+      audio.play("warning.wav");
     }
-    if (pushpressed == 1) {
-    tmrpcm.stopPlayback();
-    ledState = LOW;
-    digitalWrite(ledPin, ledState);
-  
-  }
+      if (pushpressed == 1) {
+      audio.stopPlayback();
+    }
   }
 }
 

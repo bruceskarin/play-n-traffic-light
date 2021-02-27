@@ -23,22 +23,16 @@ char startupWave[] = "startup.wav";
 char villagerWave[] = "Villager.wav";
 char tromboneWave[] = "trombone.wav";
 char victoryWave[] = "victory.wav";
-
-long previousMsWarn = 0;           
-long warnInterval = 10000;         // warning interval in milliseconds
-unsigned long currentMsWarn;
-
-//Real Time Clock
-RTC_DS3231 rtc;
-#define clock_interupt_pin 19
+char sleepWave[] = "woods.wav";
 
 // Display Parameters
 const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;  // lcd pins
+const int lcdBacklight = 15;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7); //connect LCD
 
 bool isScreenChanged = true;
-long previousMsLCD = 0;       // for LCD screen update
-long intervalLCD = 5000;      // screen cycling interval in milliseconds
+unsigned long previousMsLCD = 0;       // for LCD screen update
+unsigned long intervalLCD = 5000;      // screen cycling interval in milliseconds
 unsigned long currentMsLCD;
 
 int totalScore = 0; 
@@ -51,35 +45,43 @@ int totalScore = 0;
 int screens = 0;      // start screen
 int maxScreen = 2;   // number of screens (zero based count)
 
-
-//Warning parameters
-int pushpressed = 0;
 //Tasks
 //task(int taskNum, int taskHour, int taskMin, int greenPin, int yellowPin, int redPin, int pushPin, int minWarn)
     //task(tn, th, tm, gp, yp, rp, pp, mw)
-task task1( 1, 17, 30, 30, 31, 32, 22, 10);
-task task2( 2, 18, 30, 48, 49,  8, 23, 10);
-task task3( 3, 19, 00, 33, 34, 35, 24, 10);
-task task4( 4, 22, 30, 36, 37, 38, 25,  5);
-task task5( 5, 22, 40, 39, 40, 41, 26, 10);
-task task6( 6, 22, 50, 42, 43, 44, 27, 10);
-task task7( 7, 23, 04, 45, 46, 47, 28,  5);
+task task1( 1,  7, 30, 30, 31, 32, 22,  5);
+task task2( 2,  7, 40, 48, 49,  8, 23,  5);
+task task3( 3, 15,  0, 33, 34, 35, 24, 10);
+task task4( 4, 15, 30, 36, 37, 38, 25, 10);
+task task5( 5, 18,  0, 39, 40, 41, 26, 10);
+task task6( 6, 20, 30, 42, 43, 44, 27, 10);
+task task7( 7, 20, 45, 45, 46, 47, 28,  5);
 
 int nextTaskHH = task1.getTaskHour();
 int nextTaskMM = task1.getTaskMinute();
 
-int sleepHr = 22;
-int sleepMin = 25;
-int wakeHr = 22;
-int wakeMin = 27;
+//Real Time Clock
+RTC_DS3231 rtc;
+#define clock_interupt_pin 19
+
+bool demoMode = false;
+unsigned long currentMs;
+unsigned long previousMs = 0;
+unsigned long tickInterval = 1000;
+
+int scoreReportMinutes = 10;
+bool isSleeping = false;
+int sleepHr = 20;
+int sleepMin = 45;
+int wakeHr = 7;
+int wakeMin = 15;
 
 DateTime now;
-int nowHr;
-int nowMin;        // for all current time operations
+int nowHr = 7;
+int nowMin = 0;        // for all current time operations
 
-////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 //Setup
-////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 void setup() {
 
   Serial.begin(9600);                       // start serial debugging
@@ -107,56 +109,73 @@ void setup() {
     Serial.println("No SD card found");
     return;
   }
+  pinMode(lcdBacklight, OUTPUT);
+  digitalWrite(lcdBacklight, HIGH);
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Play N Traffic");                 // print a messege at startup
   lcd.setCursor(0, 1);
   lcd.print("Task Reminder");
-
+  
   audio.setVolume(5);
   audio.play(startupWave);
+  
+  delay(5000);
+  
+  now = rtc.now(); 
+  if(demoMode){
+    now = DateTime(now.year(), now.month(), now.day(), 7, 0);
+  }
+  
 
-  pinMode(clock_interupt_pin, INPUT_PULLUP);  //RTC interup setup
+  //RTC interup setup
+  pinMode(clock_interupt_pin, INPUT_PULLUP);  
   attachInterrupt(digitalPinToInterrupt(clock_interupt_pin), onAlarm, FALLING);
   rtc.clearAlarm(1);
   rtc.clearAlarm(2);
-  rtc.disableAlarm(2); 
-  DateTime alarm0 = DateTime (0, 0, 0, wakeHr, wakeMin); //Set Alarm Hour
+  rtc.disableAlarm(2);
+  
+  //Set Alarm Hour
+  DateTime alarm0 = DateTime (0, 0, 0, wakeHr, wakeMin); 
   rtc.writeSqwPinMode(DS3231_OFF);
   rtc.setAlarm1(alarm0, DS3231_A1_Hour);
-  Serial.println("Alarm set for: ");
-  Serial.println(wakeHr);
+  Serial.println("Alarm set for:");
+  char timeStamp[] = "hh:mm AP";
+  Serial.println(alarm0.toString(timeStamp));
    
 }//end of setup
 
-///////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 //Main Loop
-///////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void loop() {
   
-  currentMsLCD = millis();                         // set current milliseconds for LCD screen switching time interval
-  currentMsWarn = millis();
-
-
-  now = rtc.now();                    // get current time
+  // get current time
+  if(demoMode){
+      now = now + tick();
+  } else now = rtc.now();
+  
   nowHr = int(now.hour());
   nowMin = int(now.minute());
 
-  if(nowHr > sleepHr & nowMin >= sleepMin){
+  int nowMinutes = nowHr * 60 + nowMin;
+  int sleepMinutes = sleepHr * 60 + sleepMin;
+  if(nowMinutes > sleepMinutes){
     enterSleep();
   }
 
-  checkTasks();                                  //check task states
+
+  checkTasks();
   
-  changeScreen();                                // call the screen cycle function
+  changeScreen();
 
 }
 
-////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 //Supporting Functions
-///////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void checkTasks() {
 
@@ -168,8 +187,7 @@ void checkTasks() {
       }
     if(task1.pushState & !task1.taskFlag){
       task1.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task1.taskScore;
+            totalScore += task1.taskScore;
       nextTaskHH = task2.getTaskHour();
       nextTaskMM = task2.getTaskMinute();
       newScore(task1.taskScore);
@@ -182,8 +200,7 @@ void checkTasks() {
       }
     if(task2.pushState & !task1.taskFlag){
       task2.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task2.taskScore;
+            totalScore += task2.taskScore;
       nextTaskHH = task3.getTaskHour();
       nextTaskMM = task3.getTaskMinute();
       newScore(task2.taskScore);
@@ -196,8 +213,7 @@ void checkTasks() {
       }
     if(task2.pushState & !task2.taskFlag){
       task2.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task2.taskScore;
+            totalScore += task2.taskScore;
       nextTaskHH = task3.getTaskHour();
       nextTaskMM = task3.getTaskMinute();
       newScore(task2.taskScore);
@@ -210,8 +226,7 @@ void checkTasks() {
       }
     if(task3.pushState & !task3.taskFlag){
       task3.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task3.taskScore;
+            totalScore += task3.taskScore;
       nextTaskHH = task4.getTaskHour();
       nextTaskMM = task4.getTaskMinute();
       newScore(task3.taskScore);
@@ -224,8 +239,7 @@ void checkTasks() {
       }
     if(task4.pushState & !task4.taskFlag){
       task4.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task4.taskScore;
+            totalScore += task4.taskScore;
       nextTaskHH = task5.getTaskHour();
       nextTaskMM = task5.getTaskMinute();
       newScore(task4.taskScore);
@@ -238,8 +252,7 @@ void checkTasks() {
       }
     if(task5.pushState & !task5.taskFlag){
       task5.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task5.taskScore;
+            totalScore += task5.taskScore;
       nextTaskHH = task6.getTaskHour();
       nextTaskMM = task6.getTaskMinute();
       newScore(task5.taskScore);
@@ -252,8 +265,7 @@ void checkTasks() {
       }
     if(task6.pushState & !task6.taskFlag){
       task6.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task6.taskScore;
+            totalScore += task6.taskScore;
       nextTaskHH = task7.getTaskHour();
       nextTaskMM = task7.getTaskMinute();
       newScore(task6.taskScore);
@@ -267,8 +279,7 @@ void checkTasks() {
       }
     if(task7.pushState & !task7.taskFlag){
       task7.taskFlag = true;
-      pushpressed = 1;
-      totalScore += task7.taskScore;
+            totalScore += task7.taskScore;
       nextTaskHH = task1.getTaskHour();
       nextTaskMM = task1.getTaskMinute();
       newScore(task7.taskScore);
@@ -278,10 +289,9 @@ void checkTasks() {
 }//end check tasks
 
 
-void startWarning() {                    // function to start audio warning for a defined interval
+void startWarning() {
   audio.play(warnWave);
 }
-
 
 ///////////////////
 //Screen Functions
@@ -296,7 +306,7 @@ void newScore(int points){               // print score added message
     lcd.setCursor(0, 1);
     lcd.print(points, DEC);
     lcd.print(" points");
-    previousMsLCD = currentMsLCD;     //reset screen cycle time
+    previousMsLCD = currentMsLCD;
     if (points > 1)
       audio.play(victoryWave);
     else if (points > 0)
@@ -304,7 +314,8 @@ void newScore(int points){               // print score added message
     else audio.play(tromboneWave);
 }
 
-void scoreScreen(){               // print the day's total score
+// print the day's total score
+void scoreScreen(){
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Today's Score:");     
@@ -312,44 +323,32 @@ void scoreScreen(){               // print the day's total score
     lcd.print(totalScore, DEC);    
 }
 
-
-void printDigits(byte digits){      //clock display helper
+//clock display helper
+void printDigits(byte digits){      
     if(digits < 10)
         lcd.print('0');
     lcd.print(digits);
 }
 
-void datetimeScreen() {     //print current datetime         
-  int hr_12;
+//print current datetime  
+void datetimeScreen() {       
   lcd.clear();  
   lcd.setCursor(0, 0);
-  lcd.print("Time:");
-  lcd.setCursor(6, 0);
-  if (nowHr==0)
-    hr_12=12;
-   else hr_12=nowHr%12;
-  printDigits(hr_12);
-  lcd.print(":");
-  printDigits(nowMin);
-  if (nowHr<12) lcd.print(" AM");
-  else lcd.print(" PM");
+  char monthDayYear[] = "DDD MMM DD, YYYY";
+  lcd.print(now.toString(monthDayYear));
   lcd.setCursor(0, 1);
-  lcd.print("Date:");
-  lcd.setCursor(6, 1);
-  lcd.print(now.month(), DEC);
-  lcd.print("/");
-  lcd.print(now.day(), DEC);
-  lcd.print("/");
-  lcd.print(now.year(), DEC);
+  char timeStamp[] = "hh:mm AP";
+  lcd.print(now.toString(timeStamp));
 }
 
-void reminderScreen(int tHr, int tMin) {              // screen for next task time due
+// screen for next task time due
+void reminderScreen(int tHr, int tMin) {
     int hr_12;
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Next task due at");
     lcd.setCursor(0, 1);
-      if (tHr==0)
+      if (tHr==0 | tHr==12)
     hr_12=12;
    else hr_12=tHr%12;
     printDigits(hr_12);
@@ -360,12 +359,15 @@ void reminderScreen(int tHr, int tMin) {              // screen for next task ti
  }
 
 //Screen Cycling
-void changeScreen() {                 //function for Screen Cycling
+void changeScreen() {
+  //get the current milliseconds
+  currentMsLCD = millis();                        
+  
   // Start switching screen every defined intervalLCD
-  if (currentMsLCD - previousMsLCD > intervalLCD)             // save the last time you changed the display
+  if (currentMsLCD - previousMsLCD > intervalLCD)
   {
     previousMsLCD = currentMsLCD;
-    //nowMin += 2;                                      //for accelerated time testing
+    
     screens++;
     if (screens > maxScreen) {
       screens = 0;  // all screens over -> start from 1st
@@ -395,12 +397,55 @@ void changeScreen() {                 //function for Screen Cycling
   }
 }
 
+TimeSpan tick(){
+  //get the current milliseconds
+  currentMs = millis();
+  TimeSpan oneMinute = TimeSpan(0);
+  
+  if (currentMs - previousMs >= tickInterval) {
+    previousMs = currentMs;
+    oneMinute = TimeSpan(60);
+    DateTime tmp = now + oneMinute; 
+    char timeStamp[] = "hh:mm AP";
+    //Serial.println(tmp.toString(timeStamp));
+ }
+ return oneMinute;
+
+}
+
 void onAlarm() {
     Serial.println("Waking from alarm");
     sleep_disable(); // Disable sleep mode
+    isSleeping = false;
+    digitalWrite(lcdBacklight, HIGH);
+    detachInterrupt(digitalPinToInterrupt(clock_interupt_pin));
 }
 
 void enterSleep(){
+  audio.play(sleepWave);
+  totalScore += task1.goodNight();
+  totalScore += task2.goodNight();
+  totalScore += task3.goodNight();
+  totalScore += task4.goodNight();
+  totalScore += task5.goodNight();
+  totalScore += task6.goodNight();
+  totalScore += task7.goodNight();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Final Score:");     
+  lcd.setCursor(0, 1);
+  lcd.print(String(totalScore));
+
+  delay(scoreReportMinutes * 60000);
+
+  isSleeping = true;
+
+  //close out the day and turn off lights
+  totalScore = 0;
+
+  digitalWrite(lcdBacklight, LOW);
+  
   sleep_enable();                       // Enabling sleep mode
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);  // Setting the sleep mode, in this case full sleep
   
@@ -409,7 +454,6 @@ void enterSleep(){
   
   interrupts();                         // Allow interrupts again
   sleep_cpu();                          // Enter sleep mode
-
-  /* The program will continue from here when it wakes */
-  audio.play(startupWave);
+  //Serial.println("Restarting setup");
+  setup();
  }

@@ -63,6 +63,18 @@ class task{
     int getTaskMinute(){
         return taskMinute;
     }
+    int goodNight(){
+        int scoreCheck = 0;
+        if(!pushState) scoreCheck = -1;
+        digitalWrite(greenPin, LOW);
+        digitalWrite(yellowPin, LOW);
+        digitalWrite(redPin, LOW);
+        taskFlag = false;
+        taskWarn = false;
+        warnSend = false;
+        pushState = false;
+        return scoreCheck;
+    }
     private:
         int taskNum;
         int taskHour;

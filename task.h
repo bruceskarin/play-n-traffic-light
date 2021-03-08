@@ -29,12 +29,12 @@ class task{
         pushState = digitalRead(pushPin);
         int taskMinutes = taskHour * 60 + taskMinute; //convert time to minutes for easier comparisons
         int activeLed = redPin;
-        if(nowMinutes > taskMinutes){                                       //Check for past due task
+        if(nowMinutes >= taskMinutes + minutesWarning){                                       //Check for past due task
             taskScore = 0;
             blinkLed(redPin); //blink red led
             digitalWrite(yellowPin, LOW); //make sure yellow led is off
         }
-        else if(nowMinutes >= taskMinutes - minutesWarning){                //Check past warning
+        else if(nowMinutes >= taskMinutes){                //Check past warning
             taskScore = 1;
             blinkLed(yellowPin);  //blink yellow led
             activeLed = yellowPin;
@@ -65,16 +65,22 @@ class task{
     }
     int goodNight(){
         int scoreCheck = 0;
-        if(!pushState) scoreCheck = -1;
+        if(pushState==0) scoreCheck = -1;
         digitalWrite(greenPin, LOW);
         digitalWrite(yellowPin, LOW);
         digitalWrite(redPin, LOW);
         taskFlag = false;
         taskWarn = false;
         warnSend = false;
-        pushState = false;
+        pushState = 0;
         return scoreCheck;
     }
+    void goodMorning(){
+        ledState = LOW;
+        currentMs = millis();
+        previousMs = currentMs;
+    }
+    
     private:
         int taskNum;
         int taskHour;

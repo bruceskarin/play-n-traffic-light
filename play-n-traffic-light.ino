@@ -48,13 +48,13 @@ int maxScreen = 2;   // number of screens (zero based count)
 //Tasks
 //task(int taskNum, int taskHour, int taskMin, int greenPin, int yellowPin, int redPin, int pushPin, int minWarn)
     //task(tn, th, tm, gp, yp, rp, pp, mw)
-task task1( 1,  7, 30, 30, 31, 32, 22,  5);
-task task2( 2,  7, 40, 48, 49,  8, 23,  5);
-task task3( 3, 15,  0, 33, 34, 35, 24, 10);
-task task4( 4, 15, 30, 36, 37, 38, 25, 10);
+task task1( 1,  7, 25, 30, 31, 32, 22, 10);
+task task2( 2,  7, 40, 48, 49,  8, 23, 10);
+task task3( 3,  7, 45, 33, 34, 35, 24, 10);
+task task4( 4, 15, 50, 36, 37, 38, 25, 10);
 task task5( 5, 18,  0, 39, 40, 41, 26, 10);
-task task6( 6, 20, 30, 42, 43, 44, 27, 10);
-task task7( 7, 20, 45, 45, 46, 47, 28,  5);
+task task6( 6, 20, 25, 42, 43, 44, 27, 10);
+task task7( 7, 20, 30, 45, 46, 47, 28, 10);
 
 int nextTaskHH = task1.getTaskHour();
 int nextTaskMM = task1.getTaskMinute();
@@ -69,9 +69,8 @@ unsigned long previousMs = 0;
 unsigned long tickInterval = 1000;
 
 int scoreReportMinutes = 10;
-bool isSleeping = false;
 int sleepHr = 20;
-int sleepMin = 45;
+int sleepMin = 40;
 int wakeHr = 7;
 int wakeMin = 15;
 
@@ -162,12 +161,12 @@ void loop() {
 
   int nowMinutes = nowHr * 60 + nowMin;
   int sleepMinutes = sleepHr * 60 + sleepMin;
-  if(nowMinutes > sleepMinutes){
+
+  checkTasks(nowMinutes);
+  
+  if(nowMinutes >= sleepMinutes){
     enterSleep();
   }
-
-
-  checkTasks();
   
   changeScreen();
 
@@ -177,9 +176,7 @@ void loop() {
 //Supporting Functions
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void checkTasks() {
-
-  int nowMinute = nowHr * 60 + nowMin;
+void checkTasks(int nowMinute) {
   
   if(!task1.taskFlag){             //task 1
     if(task1.checkTask(nowMinute)){
@@ -293,9 +290,9 @@ void startWarning() {
   audio.play(warnWave);
 }
 
-///////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 //Screen Functions
-///////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void newScore(int points){               // print score added message
     lcd.clear();
@@ -396,7 +393,9 @@ void changeScreen() {
     }
   }
 }
-
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// Time and Sleep Functions
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 TimeSpan tick(){
   //get the current milliseconds
   currentMs = millis();
@@ -416,13 +415,13 @@ TimeSpan tick(){
 void onAlarm() {
     Serial.println("Waking from alarm");
     sleep_disable(); // Disable sleep mode
-    isSleeping = false;
     digitalWrite(lcdBacklight, HIGH);
+    Serial.println("Detaching interrupt");
     detachInterrupt(digitalPinToInterrupt(clock_interupt_pin));
 }
 
 void enterSleep(){
-  audio.play(sleepWave);
+  //audio.play(sleepWave);
   totalScore += task1.goodNight();
   totalScore += task2.goodNight();
   totalScore += task3.goodNight();
@@ -439,8 +438,6 @@ void enterSleep(){
 
   delay(scoreReportMinutes * 60000);
 
-  isSleeping = true;
-
   //close out the day and turn off lights
   totalScore = 0;
 
@@ -454,6 +451,23 @@ void enterSleep(){
   
   interrupts();                         // Allow interrupts again
   sleep_cpu();                          // Enter sleep mode
-  //Serial.println("Restarting setup");
-  setup();
+
+  //wakeup should resume here
+  Serial.println("Resuming code in one minute");
+  delay(61000);
+  Serial.println("Re-attaching interrupt");
+  attachInterrupt(digitalPinToInterrupt(clock_interupt_pin), onAlarm, FALLING);
+  task1.goodMorning();
+  task2.goodMorning();
+  task3.goodMorning();
+  task4.goodMorning();
+  task5.goodMorning();
+  task6.goodMorning();
+  task7.goodMorning();
+  if(demoMode){
+     now = DateTime(now.year(), now.month(), now.day(), 7, 0);
+  }
+  audio.setVolume(2);
+  audio.play(startupWave);
+  audio.setVolume(5);
  }

@@ -1,9 +1,10 @@
-class task{
+class Task{
     public:
         int taskScore;
         bool taskFlag;
         int pushState;
-        task(int tn, int th, int tm, int gp, int yp, int rp, int pp, int mw){
+        Task(){} //Dummy constructor
+        Task(int tn, int th, int tm, int gp, int yp, int rp, int pp, int mw){
             taskNum = tn;
             taskHour = th;
             taskMinute = tm;

@@ -18,6 +18,7 @@ TMRpcm audio;
 
 int SD_CardPin = 53;
 int audioOutPin = 6;
+int audioPowerPin = 17;
 char warnWave[] = "warning.wav";
 char startupWave[] = "startup.wav";
 char villagerWave[] = "Villager.wav";
@@ -46,18 +47,11 @@ int screens = 0;      // start screen
 int maxScreen = 2;   // number of screens (zero based count)
 
 //Tasks
-//task(int taskNum, int taskHour, int taskMin, int greenPin, int yellowPin, int redPin, int pushPin, int minWarn)
-    //task(tn, th, tm, gp, yp, rp, pp, mw)
-task task1( 1,  7, 25, 30, 31, 32, 22, 10);
-task task2( 2,  7, 40, 48, 49,  8, 23, 10);
-task task3( 3,  7, 45, 33, 34, 35, 24, 10);
-task task4( 4, 15, 50, 36, 37, 38, 25, 10);
-task task5( 5, 18,  0, 39, 40, 41, 26, 10);
-task task6( 6, 20, 25, 42, 43, 44, 27, 10);
-task task7( 7, 20, 30, 45, 46, 47, 28, 10);
+int numTasks = 7;
+Task** tasks = new Task*[numTasks];
 
-int nextTaskHH = task1.getTaskHour();
-int nextTaskMM = task1.getTaskMinute();
+int nextTaskHH;
+int nextTaskMM;
 
 //Real Time Clock
 RTC_DS3231 rtc;
@@ -66,7 +60,7 @@ RTC_DS3231 rtc;
 bool demoMode = false;
 unsigned long currentMs;
 unsigned long previousMs = 0;
-unsigned long tickInterval = 1000;
+unsigned long tickInterval = 250;
 
 int scoreReportMinutes = 10;
 int sleepHr = 20;
@@ -82,6 +76,19 @@ int nowMin = 0;        // for all current time operations
 //Setup
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 void setup() {
+
+  //tn taskNum, th taskHour, tm taskMin, gp greenPin, yp yellowPin, rp redPin, pp pushPin, mw minWarn 
+  //task(tn, th, tm, gp, yp, rp, pp, mw)
+  tasks[0] = new Task( 1,  7, 30, 30, 31, 32, 22, 10);
+  tasks[1] = new Task( 2,  7, 40, 48, 49,  8, 23, 10);
+  tasks[2] = new Task( 3,  7, 45, 33, 34, 35, 24, 10);
+  tasks[3] = new Task( 4, 15, 50, 36, 37, 38, 25, 10);
+  tasks[4] = new Task( 5, 18,  0, 39, 40, 41, 26, 10);
+  tasks[5] = new Task( 6, 20, 25, 42, 43, 44, 27, 10);
+  tasks[6] = new Task( 7, 20, 30, 45, 46, 47, 28, 10);
+
+  nextTaskHH = tasks[0]->getTaskHour();
+  nextTaskMM = tasks[0]->getTaskMinute();
 
   Serial.begin(9600);                       // start serial debugging
   Serial.println("Begin setup");
@@ -108,8 +115,10 @@ void setup() {
     Serial.println("No SD card found");
     return;
   }
+  pinMode(audioPowerPin, OUTPUT);
   pinMode(lcdBacklight, OUTPUT);
   digitalWrite(lcdBacklight, HIGH);
+  digitalWrite(audioPowerPin, HIGH);
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -130,18 +139,8 @@ void setup() {
 
   //RTC interup setup
   pinMode(clock_interupt_pin, INPUT_PULLUP);  
-  attachInterrupt(digitalPinToInterrupt(clock_interupt_pin), onAlarm, FALLING);
-  rtc.clearAlarm(1);
-  rtc.clearAlarm(2);
-  rtc.disableAlarm(2);
-  
-  //Set Alarm Hour
-  DateTime alarm0 = DateTime (0, 0, 0, wakeHr, wakeMin); 
-  rtc.writeSqwPinMode(DS3231_OFF);
-  rtc.setAlarm1(alarm0, DS3231_A1_Hour);
-  Serial.println("Alarm set for:");
-  char timeStamp[] = "hh:mm AP";
-  Serial.println(alarm0.toString(timeStamp));
+
+  setAlarm();
    
 }//end of setup
 
@@ -161,10 +160,11 @@ void loop() {
 
   int nowMinutes = nowHr * 60 + nowMin;
   int sleepMinutes = sleepHr * 60 + sleepMin;
+  int wakeMinutes = wakeHr * 60 + wakeMin;
 
   checkTasks(nowMinutes);
   
-  if(nowMinutes >= sleepMinutes){
+  if(nowMinutes >= sleepMinutes | nowMinutes < wakeMinutes){
     enterSleep();
   }
   
@@ -177,111 +177,22 @@ void loop() {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void checkTasks(int nowMinute) {
-  
-  if(!task1.taskFlag){             //task 1
-    if(task1.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task1.pushState & !task1.taskFlag){
-      task1.taskFlag = true;
-            totalScore += task1.taskScore;
-      nextTaskHH = task2.getTaskHour();
-      nextTaskMM = task2.getTaskMinute();
-      newScore(task1.taskScore);
-    }  
-  }//end task 1 check
-
-  if(!task2.taskFlag){             //task 2
-    if(task2.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task2.pushState & !task1.taskFlag){
-      task2.taskFlag = true;
-            totalScore += task2.taskScore;
-      nextTaskHH = task3.getTaskHour();
-      nextTaskMM = task3.getTaskMinute();
-      newScore(task2.taskScore);
-    }  
-  }//end task 2 check
-
-    if(!task2.taskFlag){             //task 2
-    if(task2.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task2.pushState & !task2.taskFlag){
-      task2.taskFlag = true;
-            totalScore += task2.taskScore;
-      nextTaskHH = task3.getTaskHour();
-      nextTaskMM = task3.getTaskMinute();
-      newScore(task2.taskScore);
-    }  
-  }//end task 2 check
-
-  if(!task3.taskFlag){             //task 3
-    if(task3.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task3.pushState & !task3.taskFlag){
-      task3.taskFlag = true;
-            totalScore += task3.taskScore;
-      nextTaskHH = task4.getTaskHour();
-      nextTaskMM = task4.getTaskMinute();
-      newScore(task3.taskScore);
-    }  
-  }//end task 3 check
-
-  if(!task4.taskFlag){             //task 4
-    if(task4.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task4.pushState & !task4.taskFlag){
-      task4.taskFlag = true;
-            totalScore += task4.taskScore;
-      nextTaskHH = task5.getTaskHour();
-      nextTaskMM = task5.getTaskMinute();
-      newScore(task4.taskScore);
-    }  
-  }//end task 4 check
-
-  if(!task5.taskFlag){             //task 5
-    if(task5.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task5.pushState & !task5.taskFlag){
-      task5.taskFlag = true;
-            totalScore += task5.taskScore;
-      nextTaskHH = task6.getTaskHour();
-      nextTaskMM = task6.getTaskMinute();
-      newScore(task5.taskScore);
-    }  
-  }//end task 5 check
-
-  if(!task6.taskFlag){             //task 6
-    if(task6.checkTask(nowMinute)){
-        startWarning();
-      }
-    if(task6.pushState & !task6.taskFlag){
-      task6.taskFlag = true;
-            totalScore += task6.taskScore;
-      nextTaskHH = task7.getTaskHour();
-      nextTaskMM = task7.getTaskMinute();
-      newScore(task6.taskScore);
-    }  
-  }//end task 6 check
-
-  if(!task7.taskFlag){             //task 7
-    if(task7.checkTask(nowMinute)){
-        Serial.println("warning recieved");
-        startWarning();
-      }
-    if(task7.pushState & !task7.taskFlag){
-      task7.taskFlag = true;
-            totalScore += task7.taskScore;
-      nextTaskHH = task1.getTaskHour();
-      nextTaskMM = task1.getTaskMinute();
-      newScore(task7.taskScore);
-    }  
-  }//end task 7 check
+  for(int i = 0; i < numTasks; i++){
+    if(!tasks[i]->taskFlag){             //check task if not flagged
+      if(tasks[i]->checkTask(nowMinute)){
+          startWarning();
+        }
+      if(tasks[i]->pushState & !tasks[i]->taskFlag){
+        tasks[i]->taskFlag = true;
+        totalScore += tasks[i]->taskScore;
+        int nextTask = i+1;
+        if(nextTask >= numTasks) nextTask = 0;
+        nextTaskHH = tasks[nextTask]->getTaskHour();
+        nextTaskMM = tasks[nextTask]->getTaskMinute();
+        newScore(tasks[i]->taskScore);
+      }  
+    }//end task check
+}//end for tasks loop
 
 }//end check tasks
 
@@ -416,33 +327,34 @@ void onAlarm() {
     Serial.println("Waking from alarm");
     sleep_disable(); // Disable sleep mode
     digitalWrite(lcdBacklight, HIGH);
+    digitalWrite(audioPowerPin, HIGH);
     Serial.println("Detaching interrupt");
     detachInterrupt(digitalPinToInterrupt(clock_interupt_pin));
 }
 
 void enterSleep(){
   //audio.play(sleepWave);
-  totalScore += task1.goodNight();
-  totalScore += task2.goodNight();
-  totalScore += task3.goodNight();
-  totalScore += task4.goodNight();
-  totalScore += task5.goodNight();
-  totalScore += task6.goodNight();
-  totalScore += task7.goodNight();
-
+  for(int i = 0; i < numTasks; i++){
+    totalScore += tasks[i]->goodNight();
+  }
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Final Score:");     
   lcd.setCursor(0, 1);
   lcd.print(String(totalScore));
 
-  delay(scoreReportMinutes * 60000);
+  long msMin = 60000;
+  if(demoMode) msMin = 1000;
+  long delayMs = scoreReportMinutes * msMin;
+  Serial.println(String(delayMs));
+  delay(delayMs);
 
   //close out the day and turn off lights
   totalScore = 0;
 
+  digitalWrite(audioPowerPin, LOW);
   digitalWrite(lcdBacklight, LOW);
-  
+    
   sleep_enable();                       // Enabling sleep mode
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);  // Setting the sleep mode, in this case full sleep
   
@@ -456,18 +368,33 @@ void enterSleep(){
   Serial.println("Resuming code in one minute");
   delay(61000);
   Serial.println("Re-attaching interrupt");
-  attachInterrupt(digitalPinToInterrupt(clock_interupt_pin), onAlarm, FALLING);
-  task1.goodMorning();
-  task2.goodMorning();
-  task3.goodMorning();
-  task4.goodMorning();
-  task5.goodMorning();
-  task6.goodMorning();
-  task7.goodMorning();
+  setAlarm();
+
+  for(int i = 0; i < numTasks; i++){
+    tasks[i]->goodMorning();
+  }
   if(demoMode){
      now = DateTime(now.year(), now.month(), now.day(), 7, 0);
   }
-  audio.setVolume(2);
+  audio.setVolume(1);
   audio.play(startupWave);
   audio.setVolume(5);
  }
+
+void setAlarm(){
+    attachInterrupt(digitalPinToInterrupt(clock_interupt_pin), onAlarm, FALLING);
+    rtc.clearAlarm(1);
+    rtc.clearAlarm(2);
+    rtc.disableAlarm(2);
+    
+    //Set Alarm Hour
+    DateTime alarm0 = DateTime (0, 0, 0, wakeHr, wakeMin); 
+    if(demoMode){
+      alarm0 = rtc.now() + TimeSpan(60 * 5);
+    }
+    rtc.writeSqwPinMode(DS3231_OFF);
+    rtc.setAlarm1(alarm0, DS3231_A1_Hour);
+    Serial.println("Alarm set for:");
+    char timeStamp[] = "hh:mm AP";
+    Serial.println(alarm0.toString(timeStamp));
+}
